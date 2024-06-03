@@ -2,61 +2,94 @@ package org.translator.translatorpythonruby;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Stack;
 
 public class TranslatePythonToRuby {
+    private static class Block {
+        int indentLevel;
+        String type;  // "function", "conditional", "loop"
+        boolean isCompleteConditional; // Usado para marcar se o bloco condicional está completo
+
+        Block(int indentLevel, String type) {
+            this.indentLevel = indentLevel;
+            this.type = type;
+            this.isCompleteConditional = false; // Inicializa como falso
+        }
+    }
+
     public String translatePythonToRuby(String pythonCode) {
         String[] lines = pythonCode.split("\\n");
         List<String> processedLines = new ArrayList<>();
-
-        int blockCount = 0;  // Contador de blocos que precisam de 'end'
+        Stack<Block> blockStack = new Stack<>();
 
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
-
-            // Tradução de list comprehensions antes de ajustes finais
-            line = translateListComprehension(line);
-
             int currentIndent = getIndentationLevel(line);
 
-            if (isNewBlock(line)) {
+            if (isMainCheckLine(line)) {
+                continue;  // Ignora a linha "__main__"
+            }
+
+            line = translateListComprehension(line);
+            line = adjustLineWithCommonSyntaxes(line);
+            boolean isNewBlock = isNewBlock(line);
+            if (isNewBlock) {
                 line = adjustLineForRuby(line);
-                blockCount++;
+                String type = determineBlockType(line);
+                blockStack.push(new Block(currentIndent, type));
             } else {
+                line = adjustLineForRuby(line);
                 line = adjustContinuationLineForRuby(line);
             }
-
-            line = adjustLineWithCommonSyntaxes(line);
             processedLines.add(line);
 
-            if (i == lines.length - 1 || (i + 1 < lines.length && lines[i + 1].trim().isEmpty())) {
-                while (blockCount > 0) {
-                    processedLines.add(indentString("end", currentIndent));
-                    blockCount--;
+            // Fechar blocos conforme necessário
+            int nextIndent = (i < lines.length - 1) ? getIndentationLevel(lines[i + 1]) : 0;
+            while (!blockStack.isEmpty() && blockStack.peek().indentLevel >= nextIndent) {
+                Block lastBlock = blockStack.peek();
+                if (lastBlock.type.equals("conditional") && !lastBlock.isCompleteConditional) {
+                    if (i < lines.length - 1 && (lines[i + 1].trim().startsWith("elsif") || lines[i + 1].trim().startsWith("else"))) {
+
+                        break;
+                    }
                 }
+                lastBlock = blockStack.pop();
+                processedLines.add(indentString("end", lastBlock.indentLevel));
             }
+        }
+
+        // Fechar todos os blocos restantes
+        while (!blockStack.isEmpty()) {
+            Block lastBlock = blockStack.pop();
+            processedLines.add(indentString("end", lastBlock.indentLevel));
         }
 
         return String.join("\n", processedLines);
     }
 
-    private boolean isNewBlock(String line) {
-        return line.trim().matches("^(def|if|while|for|unless|try).*:$");
-    }
-
     private String adjustLineForRuby(String line) {
-        if (line.contains("def")) {
-            line = line.replace("def", "def").replace(":", "");
-        } else if (line.contains("if") || line.contains("elif") || line.contains("else")) {
-            line = line.replace(":", "").replace("elif", "elsif") + " then";
-        } else if (line.contains("for")) {
-            line = line.replaceAll("for (\\w+) in (\\w+):", "$2.each do |$1|");
-        } else if (line.contains("while") || line.contains("unless")) {
+        // Trata declarações de método
+        if (line.trim().startsWith("def")) {
+            line = line.replace(":", "");
+        }
+        // Trata declarações condicionais
+        if (line.trim().startsWith("if ") || line.trim().startsWith("elif ")) {
+            line = line.replace("elif", "elsif").replace(":", "") + " then";
+        } else if (line.trim().startsWith("else")) {
+            line = line.replace(":", ""); // "else" não usa "then"
+        }
+        // Trata loops
+        if (line.trim().startsWith("while ") || line.trim().startsWith("for ")) {
             line = line.replace(":", " do");
-        } else if (line.contains("try")) {
+        }
+        // Trata blocos de tratamento de erro
+        if (line.trim().startsWith("try")) {
             line = "begin";
-        } else if (line.contains("except")) {
+        }
+        if (line.trim().startsWith("except")) {
             line = line.replace("except", "rescue");
-        } else if (line.contains("finally")) {
+        }
+        if (line.trim().startsWith("finally")) {
             line = "ensure";
         }
         return line;
@@ -64,28 +97,26 @@ public class TranslatePythonToRuby {
 
     private String adjustContinuationLineForRuby(String line) {
         if (line.contains("elif")) {
-            line = line.replace("elif", "elsif").replace(":", " then");
+            return line.replace("elif", "elsif") + " then";
         } else if (line.contains("else")) {
-            line = line.replace(":", "");  // Remove ':' for 'else'
+            return line.replace(":", ""); // Remove ':' for 'else'
         }
         return line;
     }
 
-    private String adjustLineWithCommonSyntaxes(String line) {
-        line = line.replaceAll("print\\s*\\(\"(.*?)\"\\)", "puts \"$1\"");
-        line = line.replaceAll("\\band\\b", "&&");
-        line = line.replaceAll("\\bor\\b", "||");
-        line = line.replaceAll("\\bnot\\b", "!");
-        line = line.replaceAll("\\bTrue\\b", "true");
-        line = line.replaceAll("\\bFalse\\b", "false");
-        return line;
+    private boolean isNewBlock(String line) {
+        return line.trim().matches("^(def|if|while|for|unless|try).*:$");
     }
 
-    private String translateListComprehension(String line) {
-        if (line.matches(".*\\[.* for .* in .*\\].*")) {
-            line = line.replaceAll("\\[(.*) for (\\w+) in (\\w+)\\]", "$3.map { |$2| $1 }");
+    private String determineBlockType(String line) {
+        if (line.trim().startsWith("def")) {
+            return "function";
+        } else if (line.trim().matches("^(if).*")) {
+            return "conditional";
+        } else if (line.trim().matches("^(while|for).*")) {
+            return "loop";
         }
-        return line;
+        return "other";
     }
 
     private int getIndentationLevel(String line) {
@@ -102,5 +133,26 @@ public class TranslatePythonToRuby {
 
     private String indentString(String content, int indentLevel) {
         return " ".repeat(indentLevel) + content;
+    }
+
+    private boolean isMainCheckLine(String line) {
+        return line.trim().equals("if __name__ == \"__main__\":");
+    }
+
+    private String translateListComprehension(String line) {
+        if (line.matches(".*\\[.* for .* in .*\\].*")) {
+            return line.replaceAll("\\[(.*) for (\\w+) in (\\w+)\\]", "$3.map { |$2| $1 }");
+        }
+        return line;
+    }
+
+    private String adjustLineWithCommonSyntaxes(String line) {
+        line = line.replaceAll("print\\s*\\(\"(.*?)\"\\)", "puts \"$1\"");
+        line = line.replaceAll("\\band\\b", "&&");
+        line = line.replaceAll("\\bor\\b", "||");
+        line = line.replaceAll("\\bnot\\b", "!");
+        line = line.replaceAll("\\bTrue\\b", "true");
+        line = line.replaceAll("\\bFalse\\b", "false");
+        return line;
     }
 }
