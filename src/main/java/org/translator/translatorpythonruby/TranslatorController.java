@@ -101,6 +101,8 @@ public class TranslatorController {
             dragFile.setText("Translation completed. Ruby file created: " + targetFilePath);
 
             translateButton.setDisable(true);
+
+            new ComparisonWindow().display(pythonCode, rubyCode);
         } catch (IOException e) {
             dragFile.setPromptText("Translation Error: " + e.getMessage());
             System.out.println("Error reading or writing files: " + e.getMessage());
