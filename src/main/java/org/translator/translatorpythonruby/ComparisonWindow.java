@@ -16,7 +16,7 @@ public class ComparisonWindow {
 
         // Área de texto para o conteúdo traduzido
         TextArea translatedContent = new TextArea(translatedText);
-        translatedContent.setEditable(false);
+        translatedContent.setEditable(true);
 
         HBox hbox = new HBox(originalContent, translatedContent);
         hbox.setSpacing(10);  // Espaço entre as áreas de texto

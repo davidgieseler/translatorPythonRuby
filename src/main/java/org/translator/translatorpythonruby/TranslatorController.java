@@ -22,35 +22,38 @@ public class TranslatorController {
     @FXML
     private Button translateButton;
 
+//    Botão de Procurar
     @FXML
     protected void onSearchButtonClick() {
         FileChooser fileChooser = new FileChooser();
 
-        FileChooser.ExtensionFilter extFilter = new FileChooser.ExtensionFilter("Python and Ruby files (*.py, *.rb)", "*.py", "*.rb");
+//        Filtros de ext e qual pasta abre no inicio
+        FileChooser.ExtensionFilter extFilter = new FileChooser.ExtensionFilter("Python files (*.py)", "*.py");
         fileChooser.getExtensionFilters().add(extFilter);
         fileChooser.setInitialDirectory(new File(System.getProperty("user.home")));
 
         File file = fileChooser.showOpenDialog(null);
 
+//        Verificação se o arquivo é aceito ou não
         if (file != null) {
             boolean isAccepted = false;
             String filePath = file.getAbsolutePath();
-            if (filePath.endsWith(".py") || filePath.endsWith(".rb")) {
+            if (filePath.endsWith(".py")) {
                 dragFile.setText(filePath);
                 isAccepted = true;
                 translateButton.setDisable(false);
             } else {
-                dragFile.setPromptText("File not accepted. Please select a Python (.py) or Ruby (.rb) file.");
+                dragFile.setPromptText("File not accepted. Please select a Python (.py) file.");
             }
         } else {
             System.out.println("File selection cancelled.");
         }
     }
-
+//  Botão de tradução para funcionar apenas com py
     @FXML
     protected void onTranslateButtonClick() {
         String sourceFilePath = dragFile.getText();
-        if (sourceFilePath.isEmpty() || (!sourceFilePath.endsWith(".py") && !sourceFilePath.endsWith(".rb"))) {
+        if (sourceFilePath.isEmpty() || !sourceFilePath.endsWith(".py") ) {
             System.out.println("Please select a Python file to translate.");
             return;
         }
@@ -60,6 +63,7 @@ public class TranslatorController {
         }
     }
 
+//  Função de Arrastar que detecta que tem algo em cima
     @FXML
     protected void onDragOver(DragEvent event) {
         if (event.getDragboard().hasFiles()) {
@@ -68,6 +72,7 @@ public class TranslatorController {
         event.consume();
     }
 
+//   Função que identifica o arquivo que foi arrastado e largado
     @FXML
     protected void onDragFileDropped(DragEvent event) {
         Dragboard db = event.getDragboard();
@@ -75,18 +80,19 @@ public class TranslatorController {
 
         if (db.hasFiles()) {
             String filePath = db.getFiles().get(0).getAbsolutePath();
-            if (filePath.endsWith(".py") || filePath.endsWith(".rb")) {
+            if (filePath.endsWith(".py")) {
                 dragFile.setText(filePath);
                 isAccepted = true;
                 translateButton.setDisable(false);
             } else {
-                dragFile.setPromptText("File not accepted. Please select a Python (.py) or Ruby (.rb) file.");
+                dragFile.setPromptText("File not accepted. Please select a Python (.py) file.");
             }
         }
         event.setDropCompleted(isAccepted);
         event.consume();
     }
 
+//    Função da tradução
     private void translateToRuby(String sourceFilePath){
         try {
 //          Le o conteúdo do arquivo Python
@@ -100,8 +106,10 @@ public class TranslatorController {
             Files.writeString(Paths.get(targetFilePath), rubyCode);
             dragFile.setText("Translation completed. Ruby file created: " + targetFilePath);
 
+//            Desativa botão de tradução
             translateButton.setDisable(true);
 
+//            Abre a janela de comparação
             new ComparisonWindow().display(pythonCode, rubyCode);
         } catch (IOException e) {
             dragFile.setPromptText("Translation Error: " + e.getMessage());
